@@ -5,8 +5,8 @@ import pynlo_extras as pe
 import clipboard_and_style_sheet as cr
 
 # %% -----
-# path = r"/Volumes/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
-path = r"/media/peterchang/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
+path = r"/Volumes/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
+# path = r"/media/peterchang/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
 
 ret = pe.python_phase_retrieval.Retrieval()
 ret.load_data(path + "8A_HNLF_output.txt")
