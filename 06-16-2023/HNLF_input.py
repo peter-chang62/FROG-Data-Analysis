@@ -2,7 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pynlo_extras as pe
-import clipboard_and_style_sheet as cr
+import clipboard as cr
 import scipy.constants as sc
 from pynlo_extras import materials
 from pynlo_extras import utilities as util
@@ -10,8 +10,8 @@ import copy
 from tqdm import tqdm
 
 # %% --------------------------------------------------------------------------
-path = r"/Volumes/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
-# path = r"/media/peterchang/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
+# path = r"/Volumes/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
+path = r"/media/peterchang/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
 
 ret = pe.python_phase_retrieval.Retrieval()
 ret.load_data(path + "HNLF_input.txt")
