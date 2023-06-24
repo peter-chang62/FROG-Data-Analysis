@@ -1,19 +1,18 @@
 # %% -----
 import matplotlib.pyplot as plt
 import numpy as np
-import pynlo_extras as pe
 import clipboard as cr
 import scipy.constants as sc
-from pynlo_extras import materials
-from pynlo_extras import utilities as util
+import shg_frog as sf
 import copy
 from tqdm import tqdm
+import pynlo
 
 # %% --------------------------------------------------------------------------
 # path = r"/Volumes/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
 path = r"/media/peterchang/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
 
-ret = pe.python_phase_retrieval.Retrieval()
+ret = sf.python_phase_retrieval.Retrieval()
 ret.load_data(path + "HNLF_input.txt")
 ret.spectrogram[:] -= ret.spectrogram[0]
 # threshold = ret.spectrogram[1].mean() + ret.spectrogram[1].std()
@@ -87,7 +86,7 @@ fig.tight_layout()
 
 # %% --------------------------------------------------------------------------
 # propagate through HNLF
-pulse = pe.light.Pulse.Sech(
+pulse = pynlo.light.Pulse.Sech(
     2**10,
     sc.c / 3000e-9,
     sc.c / 700e-9,
@@ -97,27 +96,26 @@ pulse = pe.light.Pulse.Sech(
     10e-12,
 )
 phi_v = ret.pulse.phi_v
-threshold = 1e-3 * ret.pulse.p_v.max()
 pulse.import_p_v(
     ret.pulse.v_grid,
     ret.pulse.p_v,
     phi_v=None,
 )
 
-pm1550 = materials.Fiber()
-pm1550.load_fiber_from_dict(materials.pm1550, "slow")
+pm1550 = pynlo.materials.SilicaFiber()
+pm1550.load_fiber_from_dict(pynlo.materials.pm1550, "slow")
 model_pm1550 = pm1550.generate_model(pulse)
-dz = util.estimate_step_size(model_pm1550, local_error=1e-6)
+dz = model_pm1550.estimate_step_size()
 result_pm1550 = model_pm1550.simulate(
     22.0e-2, dz=dz, local_error=1e-6, n_records=100, plot=None
 )
 
 # %% -------- propagate through a little bit of ad-hnlf -----------------------
 # result_pm1550.pulse_out.e_p = 3.5e-9
-hnlf = materials.Fiber()
-hnlf.load_fiber_from_dict(materials.hnlf_5p7, "slow")
+hnlf = pynlo.materials.SilicaFiber()
+hnlf.load_fiber_from_dict(pynlo.materials.hnlf_5p7, "slow")
 model_hnlf = hnlf.generate_model(result_pm1550.pulse_out)
-dz = util.estimate_step_size(model_hnlf, local_error=1e-6)
+dz = model_hnlf.estimate_step_size()
 result_hnlf = model_hnlf.simulate(
     15.0e-2, dz=dz, local_error=1e-6, n_records=100, plot=None
 )
@@ -127,7 +125,7 @@ result_hnlf.plot("wvl")
 
 # %% --------------------------------------------------------------------------
 s_hnlf = np.genfromtxt(path + "Spectrum_Stitched_Together_wl_nm.txt")
-pulse_data = copy.deepcopy(pulse)
+pulse_data = pulse.copy()
 pulse_data.import_p_v(sc.c / (s_hnlf[:, 0] * 1e-9), s_hnlf[:, 1])
 
 # %% --------------------------------------------------------------------------
@@ -136,7 +134,7 @@ pulse_data.import_p_v(sc.c / (s_hnlf[:, 0] * 1e-9), s_hnlf[:, 1])
 # fails to capture the dispersive wave at 1 um
 (ind,) = np.logical_and(pulse.wl_grid > 0.8e-6, pulse.wl_grid < 3e-6).nonzero()
 fig, ax = plt.subplots(1, 1)
-save = True
+save = False
 for n, s in enumerate(tqdm(result_hnlf.p_v)):
     ax.clear()
     ax.semilogy(pulse.wl_grid[ind] * 1e6, s[ind], label="simulated")
