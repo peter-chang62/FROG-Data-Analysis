@@ -9,8 +9,8 @@ from tqdm import tqdm
 import pynlo
 
 # %% --------------------------------------------------------------------------
-# path = r"/Volumes/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
-path = r"/media/peterchang/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
+path = r"/Volumes/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
+# path = r"/media/peterchang/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
 
 ret = sf.python_phase_retrieval.Retrieval()
 ret.load_data(path + "HNLF_input.txt")
@@ -121,30 +121,31 @@ result_hnlf = model_hnlf.simulate(
 )
 
 # %% --------------------------------------------------------------------------
-result_hnlf.plot("wvl")
-
-# %% --------------------------------------------------------------------------
 s_hnlf = np.genfromtxt(path + "Spectrum_Stitched_Together_wl_nm.txt")
 pulse_data = pulse.copy()
 pulse_data.import_p_v(sc.c / (s_hnlf[:, 0] * 1e-9), s_hnlf[:, 1])
 
 # %% --------------------------------------------------------------------------
-# the "start from dispersionless power spectrum" approach doesn't really do
-# better than the FROG, the dispersionless one is "too good" the FROG here
-# fails to capture the dispersive wave at 1 um
-(ind,) = np.logical_and(pulse.wl_grid > 0.8e-6, pulse.wl_grid < 3e-6).nonzero()
+result_hnlf.animate("wvl", save=False, p_ref=pulse_data)
+
+# %% --------------------------------------------------------------------------
+p = pulse.copy()
+T_WIDTH = np.zeros(result_hnlf.z.shape)
+for n, a_v in enumerate(tqdm(result_hnlf.a_v)):
+    p.a_v = a_v
+    t_width = p.t_width()
+    T_WIDTH[n] = t_width.eqv
+idx = T_WIDTH.argmin()
+
+p.a_v = result_hnlf.a_v[idx]
+
 fig, ax = plt.subplots(1, 1)
-save = False
-for n, s in enumerate(tqdm(result_hnlf.p_v)):
-    ax.clear()
-    ax.semilogy(pulse.wl_grid[ind] * 1e6, s[ind], label="simulated")
-    ax.semilogy(pulse.wl_grid[ind] * 1e6, pulse_data.p_v[ind], label="experimental")
-    ax.set_xlabel("wavelength ($\\mathrm{\\mu m}$)")
-    ax.legend(loc="best")
-    ax.set_xlim(0.74, 2.33)
-    ax.set_ylim(2.93e-27, 3.21e-21)
-    fig.tight_layout()
-    if save:
-        plt.savefig(f"../fig/{n}.png", transparent=True)
-    else:
-        plt.pause(0.05)
+ax.plot(p.wl_grid * 1e6, p.p_v * model_hnlf.dv_dl * 1e3)
+ax.plot(p.wl_grid * 1e6, pulse_data.p_v * model_hnlf.dv_dl * 1e3)
+ax.set_ylabel("mW / nm")
+ax.set_xlabel("wavelength ($\\mathrm{\\mu m}$)")
+
+# %% --------------------------------------------------------------------------
+fig, ax = result_hnlf.plot("wvl")
+ax[1, 0].axhline(result_hnlf.z[idx] * 1e3, color="k", linestyle="--")
+ax[1, 1].axhline(result_hnlf.z[idx] * 1e3, color="k", linestyle="--")
