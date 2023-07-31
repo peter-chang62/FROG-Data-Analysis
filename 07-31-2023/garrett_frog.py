@@ -64,3 +64,10 @@ ret.retrieve(
 fig, ax = ret.plot_results()
 # ax[2].set_xlim(-150, 150)
 # ax[3].set_xlim(-150, 150)
+
+# %% --------------------------------------------------------------------------
+s = shg_frog.python_phase_retrieval.calculate_spectrogram(
+    ret.pulse_data, ret.T_fs * 1e-15
+)
+fig, ax = plt.subplots(1, 1)
+ax.pcolormesh(ret.T_fs, ret.pulse_data.v_grid * 1e-12, s.T, cmap="gnuplot2_r")
