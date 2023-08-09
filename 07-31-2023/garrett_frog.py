@@ -51,23 +51,30 @@ ret.set_initial_guess(
 
 # %% --------------------------------------------------------------------------
 ret.load_spectrum_data(spec[:, 0], spec[:, 1])
-t = 925
+t = 1000
 ret.retrieve(
     -t,
     t,
     50,
     iter_set=None,
-    plot_update=True,
+    plot_update=False,
 )
 
 # %% --------------------------------------------------------------------------
 fig, ax = ret.plot_results()
 # ax[2].set_xlim(-150, 150)
 # ax[3].set_xlim(-150, 150)
+ax[0].set_xlim(-0.150, 0.150)
+ax[1].set_xlim(160, 230)
+
+fwhm = ret.pulse.t_width().fwhm
+ax[0].axvline(-fwhm / 2 * 1e12, color="k", linestyle="--")
+ax[0].axvline(fwhm / 2 * 1e12, color="k", linestyle="--")
+fig.suptitle(f"{np.round(fwhm * 1e15)} fs")
 
 # %% --------------------------------------------------------------------------
-s = shg_frog.python_phase_retrieval.calculate_spectrogram(
-    ret.pulse_data, ret.T_fs * 1e-15
-)
-fig, ax = plt.subplots(1, 1)
-ax.pcolormesh(ret.T_fs, ret.pulse_data.v_grid * 1e-12, s.T, cmap="gnuplot2_r")
+# s = shg_frog.python_phase_retrieval.calculate_spectrogram(
+#     ret.pulse_data, ret.T_fs * 1e-15
+# )
+# fig, ax = plt.subplots(1, 1)
+# ax.pcolormesh(ret.T_fs, ret.pulse_data.v_grid * 1e-12, s.T, cmap="gnuplot2_r")
