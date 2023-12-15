@@ -3,6 +3,8 @@ import numpy as np
 import shg_frog
 import matplotlib.pyplot as plt
 import clipboard
+from scipy.constants import c
+
 
 # %% --------------------------------------------------------------------------
 ret = shg_frog.python_phase_retrieval.Retrieval()
@@ -16,8 +18,8 @@ ret.spectrogram[:] += ret.spectrogram[::-1]
 spec = np.genfromtxt(
     "data/20230726_50cm_5.5mW_nm.csv", skip_header=76, skip_footer=1, delimiter=";"
 )
-spec[:, 1] = 10 ** (spec[:, 1] / 10)
-spec[:, 0] *= 1e-3
+spec[:, 1] = 10 ** (spec[:, 1] / 10)  # dB -> linear
+spec[:, 0] *= 1e-3  # nm -> um
 
 # %% --------------------------------------------------------------------------
 # fig, ax = plt.subplots(1, 1)
@@ -57,7 +59,7 @@ ret.retrieve(
     t,
     50,
     iter_set=None,
-    plot_update=False,
+    plot_update=1,
 )
 
 # %% --------------------------------------------------------------------------
@@ -65,7 +67,7 @@ fig, ax = ret.plot_results()
 ax[0].set_xlim(-0.150, 0.150)
 ax[1].set_xlim(160, 230)
 
-fwhm = ret.pulse.t_width().fwhm
+fwhm = ret.pulse.t_width(200).fwhm
 ax[0].axvline(-fwhm / 2 * 1e12, color="k", linestyle="--")
 ax[0].axvline(fwhm / 2 * 1e12, color="k", linestyle="--")
 fig.suptitle(f"{np.round(fwhm * 1e15)} fs")

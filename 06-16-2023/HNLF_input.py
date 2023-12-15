@@ -8,14 +8,19 @@ import clipboard
 from scipy.constants import c
 
 # %% --------------------------------------------------------------------------
-path = r"G:\\Research_Projects\\FROG\\Data\\06-16-2023_PC_UBFS/"
+path = r"/Volumes/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
 
 ret = shg_frog.python_phase_retrieval.Retrieval()
 ret.load_data(path + "HNLF_input.txt")
 ret.spectrogram[:] += ret.spectrogram[::-1]
 ret.spectrogram[:] -= ret.spectrogram[0]
 threshold = ret.spectrogram[1].mean() + ret.spectrogram[1].std()
+threshold = ret.spectrogram[1].max()
 ret.spectrogram[:] = np.where(ret.spectrogram < threshold, 0, ret.spectrogram)
+
+# %% --------------------------------------------------------------------------
+spec = np.genfromtxt(path + "SPECTRUM_GRAT_PAIR.txt")
+spec[:, 1] = np.where(spec[:, 1] < 0, 0, spec[:, 1])
 
 # %% --------------------------------------------------------------------------
 # fig, ax = plt.subplots(1, 1)
@@ -46,7 +51,10 @@ ret.set_initial_guess(
 )
 
 # %% --------------------------------------------------------------------------
-t = 100
+# t = 300
+t = 600
+
+ret.load_spectrum_data(spec[:, 0] * 1e-3, spec[:, 1])
 ret.retrieve(
     -t,
     t,
@@ -55,3 +63,4 @@ ret.retrieve(
     plot_update=1,
 )
 fig, ax = ret.plot_results()
+fig.suptitle(ret.error.argmin())
