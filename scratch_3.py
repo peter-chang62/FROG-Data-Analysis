@@ -1,8 +1,5 @@
 """
-Pricipal Component Generalized Projection Algorithm
-
-At the end of the day, this script should be implemented by modifying the
-retrieve function in python_phase_retrieva.py
+This is the exact same as PCGPA.py, but for my grating output
 """
 
 # %% -----
@@ -15,7 +12,7 @@ from shg_frog import light, BBO
 from scipy.interpolate import RectBivariateSpline, InterpolatedUnivariateSpline
 import blit
 import jax
-from scipy.signal import butter, filtfilt
+import pandas as pd
 
 DataCollection = collections.namedtuple("DataCollection", ["t_grid", "v_grid", "data"])
 
@@ -39,7 +36,8 @@ def ifft(x, axis=-1, fsc=1.0):
 
 
 # %% ----- load the spectrogram data
-data = np.genfromtxt("12-14-2023/Menlo Comb A FROG.txt")
+path = r"/Volumes/Peter SSD/Research_Projects/FROG/Data/06-16-2023_PC_UBFS/"
+data = np.genfromtxt(path + "HNLF_input.txt")
 
 # time and frequency axis of grating spectrometer + translation stage
 # shift time axis to center
@@ -52,15 +50,10 @@ idx_keep = min([idx_t0, t_fs.size // 2])
 data = data[idx_t0 - idx_keep : idx_t0 + idx_keep]
 t_fs = t_fs[idx_t0 - idx_keep : idx_t0 + idx_keep]
 
-b, a = butter(N=2, Wn=0.25, btype="low")
-data = filtfilt(b, a, data, axis=0)
-data = filtfilt(b, a, data, axis=1)
-
 data += data[::-1]  # symmetrize the FROG
 
 # remove background
 bckgnd = data[0].copy()
-std = np.std(bckgnd)
 data -= bckgnd
 data = np.where(data < data[1].max(), 0, data)
 
@@ -146,13 +139,9 @@ factor = np.sum(num) / np.sum(denom)
 spectrogram *= factor
 
 # %% ----- experimental spectrum, if available
-spectrum = np.genfromtxt(
-    "12-14-2023/1050mA_Preamp_Current.CSV",
-    delimiter=",",
-    skip_header=39,
-)
+spectrum = np.genfromtxt(path + "SPECTRUM_GRAT_PAIR.txt")
 spectrum[:, 0] = c / (spectrum[:, 0] * 1e-9)
-spectrum[:, 1] *= c / spectrum[:, 0] ** 2
+spectrum[:, 1] = spectrum[:, 1] * c / spectrum[:, 0] ** 2
 pulse_data = pulse.clone_pulse(pulse)
 pulse_data.import_p_v(spectrum[:, 0], spectrum[:, 1])
 
@@ -286,16 +275,3 @@ ax_3.set_ylabel("Frequency (THz)")
 ax[1].set_xlabel("time (fs)")
 ax[1].set_ylabel("J / s")
 fig.tight_layout()
-
-# %% ----- just curious what's the interferometric FROG?
-o = 2 * pulse.a_t * np.c_[pulse.a_t]  # cross term
-o += np.ones(pulse.n) * np.c_[pulse.a_t**2]  # signal^2
-o += pulse.a_t**2 * np.c_[np.ones(pulse.n)]  # gate^2
-o_rs = np.zeros(o.shape, dtype=complex)
-for r in range(o.shape[0]):
-    o_rs[r] = np.roll(o[r], -r)
-s_t = np.fft.fftshift(o_rs, axes=1)
-s_v = fft(s_t, axis=0, fsc=pulse.dt)
-
-fig, ax = plt.subplots(1, 1)
-ax.pcolormesh(pulse.t_grid * 1e15, pulse.v_grid * 1e-12, abs(s_v) ** 2, cmap="RdBu_r")

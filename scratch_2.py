@@ -1,12 +1,11 @@
 """
-Pricipal Component Generalized Projection Algorithm
-
-At the end of the day, this script should be implemented by modifying the
-retrieve function in python_phase_retrieva.py
+This is the exact same as PCGPA.py, but for garrett's FROG results instead of
+Matt's.
 """
 
 # %% -----
 import numpy as np
+from numpy.fft import fftshift, ifftshift
 import matplotlib.pyplot as plt
 import clipboard
 from scipy.constants import c
@@ -15,31 +14,30 @@ from shg_frog import light, BBO
 from scipy.interpolate import RectBivariateSpline, InterpolatedUnivariateSpline
 import blit
 import jax
+import pandas as pd
 from scipy.signal import butter, filtfilt
 
 DataCollection = collections.namedtuple("DataCollection", ["t_grid", "v_grid", "data"])
 
 
 def fft(x, axis=-1, fsc=1.0):
-    return (
-        np.fft.fftshift(
-            np.fft.fft(np.fft.ifftshift(x, axes=axis), axis=axis), axes=axis
-        )
-        * fsc
-    )
+    return fftshift(np.fft.fft(ifftshift(x, axes=axis), axis=axis), axes=axis) * fsc
 
 
 def ifft(x, axis=-1, fsc=1.0):
-    return (
-        np.fft.fftshift(
-            np.fft.ifft(np.fft.ifftshift(x, axes=axis), axis=axis), axes=axis
-        )
-        / fsc
-    )
+    return fftshift(np.fft.ifft(ifftshift(x, axes=axis), axis=axis), axes=axis) / fsc
+
+
+def rfft(x, axis=-1, fsc=1.0):
+    return np.fft.rfft(ifftshift(x, axes=axis), axis=axis) * fsc
+
+
+def irfft(x, axis=-1, fsc=1.0):
+    return fftshift(np.fft.irfft(x, axis=axis), axes=axis) / fsc
 
 
 # %% ----- load the spectrogram data
-data = np.genfromtxt("12-14-2023/Menlo Comb A FROG.txt")
+data = np.genfromtxt("07-31-2023/data/run15.txt")
 
 # time and frequency axis of grating spectrometer + translation stage
 # shift time axis to center
@@ -60,7 +58,6 @@ data += data[::-1]  # symmetrize the FROG
 
 # remove background
 bckgnd = data[0].copy()
-std = np.std(bckgnd)
 data -= bckgnd
 data = np.where(data < data[1].max(), 0, data)
 
@@ -146,13 +143,9 @@ factor = np.sum(num) / np.sum(denom)
 spectrogram *= factor
 
 # %% ----- experimental spectrum, if available
-spectrum = np.genfromtxt(
-    "12-14-2023/1050mA_Preamp_Current.CSV",
-    delimiter=",",
-    skip_header=39,
-)
-spectrum[:, 0] = c / (spectrum[:, 0] * 1e-9)
-spectrum[:, 1] *= c / spectrum[:, 0] ** 2
+spectrum = pd.read_excel("07-31-2023/data/20230726_50cm_5.5mW_reformatted.xlsx").values
+spectrum[:, 0] *= 1e12
+spectrum[:, 1] = 10 ** (spectrum[:, 1] / 10)
 pulse_data = pulse.clone_pulse(pulse)
 pulse_data.import_p_v(spectrum[:, 0], spectrum[:, 1])
 
@@ -183,7 +176,7 @@ bm.update()
 
 # %% ----- phase retrieval algorithm! All the previous stuff was just setting up :)
 loop_count = 0
-iter_limit = 500
+iter_limit = 300
 
 o_rs = np.zeros((pulse.n, pulse.n), dtype=complex)
 error = np.zeros(iter_limit)
@@ -198,7 +191,7 @@ while loop_count < iter_limit:
     o = pulse.a_t * np.c_[pulse.a_t]
     for r in range(o.shape[0]):
         o_rs[r] = np.roll(o[r], -r)
-    s_t = np.fft.fftshift(o_rs, axes=1)
+    s_t = fftshift(o_rs, axes=1)
     s_v = fft(s_t, axis=0, fsc=pulse.dt)
 
     error[loop_count] = (
@@ -219,7 +212,7 @@ while loop_count < iter_limit:
 
     # back track from the spectrogram to get back to o
     s_t = ifft(s_v, axis=0, fsc=pulse.dt)
-    o_rs = np.fft.ifftshift(s_t, axes=1)
+    o_rs = ifftshift(s_t, axes=1)
     for r in range(o.shape[0]):
         o[r] = np.roll(o_rs[r], r)
 
@@ -243,9 +236,10 @@ while loop_count < iter_limit:
 # %% ----- plot results
 pulse.a_t[:] = AT[error.argmin()]
 o = pulse.a_t * np.c_[pulse.a_t]
+o_rs = np.zeros(o.shape, dtype=complex)
 for r in range(o.shape[0]):
     o_rs[r] = np.roll(o[r], -r)
-s_t = np.fft.fftshift(o_rs, axes=1)
+s_t = fftshift(o_rs, axes=1)
 s_v = fft(s_t, axis=0, fsc=pulse.dt)
 
 l_v.set_ydata(pulse.p_v / pulse.p_v.max())
@@ -255,14 +249,24 @@ bm.update()
 fig, ax = plt.subplots(1, 1)
 ax.plot(error, linewidth=2)
 ax.set_xlabel("iteration #")
-ax.set_ylabel("error")
+ax.set_title("error")
 fig.tight_layout()
 
 fig, ax = plt.subplots(1, 2)
 ax[0].pcolormesh(
-    pulse.t_grid * 1e15, pulse.v_grid * 1e-12, abs(s_v) ** 2, cmap="RdBu_r"
+    pulse.t_grid * 1e15,
+    pulse.v_grid * 1e-12,
+    abs(s_v) ** 2,
+    cmap="RdBu_r",
 )
-ax[1].pcolormesh(pulse.t_grid * 1e15, pulse.v_grid * 1e-12, spectrogram, cmap="RdBu_r")
+ax[0].set_title("retrieved")
+ax[1].pcolormesh(
+    pulse.t_grid * 1e15,
+    pulse.v_grid * 1e-12,
+    spectrogram,
+    cmap="RdBu_r",
+)
+ax[1].set_title("experimental")
 ax[0].set_xlabel("time (fs)")
 ax[0].set_ylabel("frequency (THz)")
 ax[1].set_xlabel("time (fs)")
@@ -287,15 +291,82 @@ ax[1].set_xlabel("time (fs)")
 ax[1].set_ylabel("J / s")
 fig.tight_layout()
 
-# %% ----- just curious what's the interferometric FROG?
-o = 2 * pulse.a_t * np.c_[pulse.a_t]  # cross term
-o += np.ones(pulse.n) * np.c_[pulse.a_t**2]  # signal^2
-o += pulse.a_t**2 * np.c_[np.ones(pulse.n)]  # gate^2
-o_rs = np.zeros(o.shape, dtype=complex)
-for r in range(o.shape[0]):
-    o_rs[r] = np.roll(o[r], -r)
-s_t = np.fft.fftshift(o_rs, axes=1)
-s_v = fft(s_t, axis=0, fsc=pulse.dt)
-
 fig, ax = plt.subplots(1, 1)
-ax.pcolormesh(pulse.t_grid * 1e15, pulse.v_grid * 1e-12, abs(s_v) ** 2, cmap="RdBu_r")
+ax.plot(pulse.v_grid * 1e-12, np.sum(spectrogram, axis=1), label="experiment")
+ax.plot(pulse.v_grid * 1e-12, np.sum(abs(s_v) ** 2, axis=1), label="retrieved")
+ax.set_xlabel("frequency (THz)")
+ax.set_title("Frequency Marginal")
+ax.legend(loc="best")
+
+# %% ----- just curious what's the interferometric FROG?
+# the signal fields are column vectors! -> the gate fields are row vectors
+pulse_if = light.Pulse.Sech(
+    256,
+    pulse.v0 - 2 * pulse.v0,
+    pulse.v0 + 2 * pulse.v0,
+    pulse.v0,
+    pulse.e_p,
+    200e-15,
+    np.diff(pulse.t_grid[[0, -1]]),
+)
+pulse_if.import_p_v(pulse.v_grid, pulse.p_v, np.unwrap(pulse.phi_v))
+
+w0 = 2 * np.pi * pulse_if.v0
+n = pulse_if.n
+
+signal = np.c_[pulse_if.a_t] * np.ones(n)
+
+gate = pulse_if.a_t * np.c_[np.ones(n)]
+for r in range(n):
+    gate[r] = np.roll(gate[r], -r)
+gate = fftshift(gate, axes=1)
+a
+s_t_if = (signal + gate * np.exp(-1j * w0 * pulse_if.t_grid)) ** 2
+s_v_if = fft(s_t_if, axis=0, fsc=pulse_if.dt)
+
+spectrogram_if = abs(s_v_if) ** 2
+spectrogram_v_if = rfft(spectrogram_if, axis=1, fsc=pulse_if.dt)
+
+x = spectrogram_v_if.copy()
+x[:, x.shape[1] // 4 :] = 0
+y = irfft(x, axis=1, fsc=pulse_if.dt)
+shg = abs(fft(pulse_if.a_t**2, fsc=pulse_if.dt)) ** 2
+z = (y.T - shg * 2).T
+
+# %% --- plot numerical collinear FROG results
+fig, ax = plt.subplots(1, 1)
+v_grid_if = np.fft.rfftfreq(spectrogram_if.shape[1], d=pulse_if.dt) + pulse_if.v0
+ax.plot(v_grid_if * 1e-12, np.sum(abs(spectrogram_v_if), axis=0))
+ax.axvline(v_grid_if[0] * 1e-12 * 2, color="k", linestyle="--")
+ax.axvline(v_grid_if[0] * 1e-12 * 3, color="k", linestyle="--")
+ax.axvline(v_grid_if[v_grid_if.size // 4] * 1e-12, color="r", linestyle="--")
+ax.set_xlabel("frequency (THz)")
+
+fig, ax = plt.subplots(1, 3, figsize=np.array([16.65, 5.3]))
+(idx,) = np.logical_and(
+    pulse.v_grid.min() < pulse_if.v_grid, pulse_if.v_grid < pulse.v_grid.max()
+).nonzero()
+ax[0].pcolormesh(
+    pulse_if.t_grid * 1e15,
+    pulse_if.v_grid[idx] * 1e-12,
+    spectrogram_if[idx],
+    cmap="RdBu_r",
+)
+ax[0].set_xlim(-100, 100)
+ax[1].pcolormesh(
+    pulse_if.t_grid * 1e15, pulse_if.v_grid[idx] * 1e-12, y[idx], cmap="RdBu_r"
+)
+ax[2].pcolormesh(
+    pulse_if.t_grid * 1e15, pulse_if.v_grid[idx] * 1e-12, z[idx], cmap="RdBu_r"
+)
+I_corr = np.sum(spectrogram, axis=0) * pulse.dv
+I_corr_if = np.sum(spectrogram_if, axis=0) * pulse_if.dv
+I_corr_if -= I_corr_if.mean()
+# ax[3].plot(pulse_if.t_grid * 1e15, I_corr_if / I_corr_if.max())
+# ax[3].plot(pulse.t_grid * 1e15, I_corr / I_corr.max())
+[i.set_xlabel("time (fs)") for i in ax]
+[i.set_ylabel("frequency (THz)") for i in ax[:-1]]
+ax[0].set_title("CFROG")
+ax[1].set_title("CFROG DC")
+ax[2].set_title("CFROG DC - SHG background")
+fig.tight_layout()

@@ -1,8 +1,6 @@
 """
-Pricipal Component Generalized Projection Algorithm
-
-At the end of the day, this script should be implemented by modifying the
-retrieve function in python_phase_retrieva.py
+This is the exact same as PCGPA.py, but for garrett's FROG results instead of
+Matt's
 """
 
 # %% -----
@@ -15,7 +13,7 @@ from shg_frog import light, BBO
 from scipy.interpolate import RectBivariateSpline, InterpolatedUnivariateSpline
 import blit
 import jax
-from scipy.signal import butter, filtfilt
+import pandas as pd
 
 DataCollection = collections.namedtuple("DataCollection", ["t_grid", "v_grid", "data"])
 
@@ -39,7 +37,7 @@ def ifft(x, axis=-1, fsc=1.0):
 
 
 # %% ----- load the spectrogram data
-data = np.genfromtxt("12-14-2023/Menlo Comb A FROG.txt")
+data = np.genfromtxt("07-31-2023/data/run15.txt")
 
 # time and frequency axis of grating spectrometer + translation stage
 # shift time axis to center
@@ -52,15 +50,10 @@ idx_keep = min([idx_t0, t_fs.size // 2])
 data = data[idx_t0 - idx_keep : idx_t0 + idx_keep]
 t_fs = t_fs[idx_t0 - idx_keep : idx_t0 + idx_keep]
 
-b, a = butter(N=2, Wn=0.25, btype="low")
-data = filtfilt(b, a, data, axis=0)
-data = filtfilt(b, a, data, axis=1)
-
 data += data[::-1]  # symmetrize the FROG
 
 # remove background
 bckgnd = data[0].copy()
-std = np.std(bckgnd)
 data -= bckgnd
 data = np.where(data < data[1].max(), 0, data)
 
@@ -145,18 +138,62 @@ denom = np.sum(spectrogram * pulse.dv, axis=0)
 factor = np.sum(num) / np.sum(denom)
 spectrogram *= factor
 
-# %% ----- experimental spectrum, if available
-spectrum = np.genfromtxt(
-    "12-14-2023/1050mA_Preamp_Current.CSV",
-    delimiter=",",
-    skip_header=39,
-)
-spectrum[:, 0] = c / (spectrum[:, 0] * 1e-9)
-spectrum[:, 1] *= c / spectrum[:, 0] ** 2
-pulse_data = pulse.clone_pulse(pulse)
-pulse_data.import_p_v(spectrum[:, 0], spectrum[:, 1])
+# %% ----- RANA
+autoconv = np.sum(spectrogram, axis=1) * pulse.dv
+autoconv_t = ifft(autoconv, fsc=pulse.dt)
+s_t_p = autoconv_t**0.5
+s_t_p = abs(s_t_p.real) + 1j * s_t_p.imag
+s_t_m = -abs(s_t_p.real) + 1j * s_t_p.imag
 
-# pulse.import_p_v(spectrum[:, 0], spectrum[:, 1])
+s_t = np.zeros(autoconv.size, dtype=complex)
+s_t[0:2] = s_t_p[0:2]
+alpha = 0.09
+beta = 0.425
+gamma = 1
+for n in range(1, s_t.size - 1):
+    delta_0_p = s_t_p[n + 1] - s_t[n]
+    delta_0_m = s_t_m[n + 1] - s_t[n]
+
+    delta_1_p = (s_t_p[n + 1] - s_t[n]) - (s_t[n] - s_t[n - 1])
+    delta_1_m = (s_t_m[n + 1] - s_t[n]) - (s_t[n] - s_t[n - 1])
+
+    delta_2_p = ((s_t_p[n + 1] - s_t[n]) - (s_t[n] - s_t[n - 1])) - (
+        (s_t[n] - s_t[n - 1]) - (s_t[n - 1] - s_t[n - 2])
+    )
+    delta_2_m = ((s_t_m[n + 1] - s_t[n]) - (s_t[n] - s_t[n - 1])) - (
+        (s_t[n] - s_t[n - 1]) - (s_t[n - 1] - s_t[n - 2])
+    )
+
+    eps_p = (
+        alpha * abs(delta_0_p) ** 2
+        + beta * abs(delta_1_p) ** 2
+        + gamma * abs(delta_2_p) ** 2
+    )
+    eps_m = (
+        alpha * abs(delta_0_m) ** 2
+        + beta * abs(delta_1_m) ** 2
+        + gamma * abs(delta_2_m) ** 2
+    )
+
+    idx = np.array([eps_p, eps_m]).argmin()
+    s_t[n + 1] = np.array([s_t_p[n + 1], s_t_m[n + 1]])[idx]
+
+SW = fft(s_t, fsc=pulse.dt).real
+pulse_rana = pulse.clone_pulse(pulse)
+pulse_rana.import_p_v(pulse.v_grid, SW)
+
+# %% ----- instantiate pulse instance
+pulse = light.Pulse.Sech(
+    n_points=256,
+    v_min=v0 / 2 - v_width / 2,
+    v_max=v0 / 2 + v_width / 2,
+    v0=v0 / 2,
+    e_p=1e-9,
+    t_fwhm=200e-15,
+    time_window=data.t_grid.max() - data.t_grid.min(),
+)
+
+pulse.import_p_v(pulse_rana.v_grid, SW)
 
 phase = np.random.uniform(low=0, high=1, size=pulse.n) * np.pi / 8
 pulse.a_t[:] = pulse.a_t * np.exp(1j * phase)
@@ -164,7 +201,7 @@ pulse.a_t[:] = pulse.a_t * np.exp(1j * phase)
 # %% ----- set up figures for live update
 fig, ax = plt.subplots(1, 3, figsize=np.array([9.08, 4.82]))
 ax[0].plot(
-    pulse_data.v_grid * 1e-12, pulse_data.p_v / pulse_data.p_v.max(), "--", linewidth=2
+    pulse_rana.v_grid * 1e-12, pulse_rana.p_v / pulse_rana.p_v.max(), "--", linewidth=2
 )
 
 (l_v,) = ax[0].plot(pulse.v_grid * 1e-12, pulse.p_v / pulse.p_v.max(), animated=True)
@@ -183,7 +220,7 @@ bm.update()
 
 # %% ----- phase retrieval algorithm! All the previous stuff was just setting up :)
 loop_count = 0
-iter_limit = 500
+iter_limit = 300
 
 o_rs = np.zeros((pulse.n, pulse.n), dtype=complex)
 error = np.zeros(iter_limit)
@@ -241,6 +278,13 @@ while loop_count < iter_limit:
     print(loop_count)
 
 # %% ----- plot results
+# experimental spectrum, if available
+spectrum = pd.read_excel("07-31-2023/data/20230726_50cm_5.5mW_reformatted.xlsx").values
+spectrum[:, 0] *= 1e12
+spectrum[:, 1] = 10 ** (spectrum[:, 1] / 10)
+pulse_data = pulse.clone_pulse(pulse)
+pulse_data.import_p_v(spectrum[:, 0], spectrum[:, 1])
+
 pulse.a_t[:] = AT[error.argmin()]
 o = pulse.a_t * np.c_[pulse.a_t]
 for r in range(o.shape[0]):
@@ -273,9 +317,10 @@ tg_v = np.where(pulse.p_v / pulse.p_v.max() > 1e-3, pulse.tg_v, np.nan)
 vg_t = np.where(pulse.p_t / pulse.p_t.max() > 1e-3, pulse.vg_t, np.nan)
 fig, ax = plt.subplots(1, 2, figsize=np.array([8.85, 4.8]))
 ax[0].plot(pulse_data.v_grid * 1e-12, pulse_data.p_v, "--", linewidth=2)
+ax[0].plot(pulse.v_grid * 1e-12, pulse_rana.p_v, "--", linewidth=2)
 ax[0].plot(pulse.v_grid * 1e-12, pulse.p_v)
 ax_2 = ax[0].twinx()
-ax_2.plot(pulse.v_grid * 1e-12, tg_v * 1e15, "C2")
+ax_2.plot(pulse.v_grid * 1e-12, tg_v * 1e15, "C3")
 ax[0].set_xlabel("frequency (THz)")
 ax[0].set_ylabel("J / Hz")
 ax_2.set_ylabel("delay (fs)")
@@ -286,16 +331,3 @@ ax_3.set_ylabel("Frequency (THz)")
 ax[1].set_xlabel("time (fs)")
 ax[1].set_ylabel("J / s")
 fig.tight_layout()
-
-# %% ----- just curious what's the interferometric FROG?
-o = 2 * pulse.a_t * np.c_[pulse.a_t]  # cross term
-o += np.ones(pulse.n) * np.c_[pulse.a_t**2]  # signal^2
-o += pulse.a_t**2 * np.c_[np.ones(pulse.n)]  # gate^2
-o_rs = np.zeros(o.shape, dtype=complex)
-for r in range(o.shape[0]):
-    o_rs[r] = np.roll(o[r], -r)
-s_t = np.fft.fftshift(o_rs, axes=1)
-s_v = fft(s_t, axis=0, fsc=pulse.dt)
-
-fig, ax = plt.subplots(1, 1)
-ax.pcolormesh(pulse.t_grid * 1e15, pulse.v_grid * 1e-12, abs(s_v) ** 2, cmap="RdBu_r")
